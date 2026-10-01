@@ -45,14 +45,17 @@ export default {
     handleChange() {
       this.$emit("update:value", this.textarea);
     },
+    // 将用户输入的关键词解析成小写数组（init 与 hideBlockedSolutions 共用）
+    getKeywords() {
+      return this.textarea
+        .split(",")
+        .map((keyword) => keyword.trim().toLowerCase())
+        .filter(Boolean);
+    },
     init() {
       if (!this.textarea) return;
 
-      // 将用户输入的关键字分割为数组，并去除空格和空值
-      const keywords = this.textarea
-        .split(",")
-        .map((keyword) => keyword.trim())
-        .filter(Boolean);
+      const keywords = this.getKeywords();
       if (keywords.length === 0) return;
 
       // 安全检查 jQuery 的使用，防止元素不可用时出错
@@ -69,14 +72,32 @@ export default {
         // 检查评论回复
         $(".topic-body .cooked")
           .filter((index, element) => {
+            // 快问快答的解决方案摘录同样带 .cooked 且嵌在一楼内部，跳过以免误伤一楼
+            if ($(element).closest(".d-post-accordion, .accepted-answers").length) return false;
             const text = $(element).text().toLowerCase();
-            return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+            return keywords.some((keyword) => text.includes(keyword));
           })
           .parents(".topic-post")
           .remove();
+
+        // 方案面板的摘录卡片独立处理，不与楼层屏蔽绑定
+        this.hideBlockedSolutions();
       } catch (error) {
         console.error("init 方法出错：", error);
       }
+    },
+    // 隐藏方案面板中命中关键词的摘录卡片
+    // 只按卡片自身内容判断，不依赖被引用的楼层是否已渲染
+    hideBlockedSolutions() {
+      const keywords = this.getKeywords();
+      if (keywords.length === 0) return;
+      $(".d-post-accordion-item").each((index, element) => {
+        const $item = $(element);
+        const text = $item.find(".cooked").text().toLowerCase();
+        if (text && keywords.some((keyword) => text.includes(keyword))) {
+          $item.hide();
+        }
+      });
     },
     startPolling() {
       if (this.pollingInterval || !this.textarea) return;
@@ -97,6 +118,9 @@ export default {
             previousPostStreamLength = currentPostStreamLength;
             this.init();
           }
+
+          // 面板可能被站点重新渲染，逐轮补一次隐藏
+          this.hideBlockedSolutions();
         } catch (error) {
           console.error("轮询逻辑出错：", error);
         }
